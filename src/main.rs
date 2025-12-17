@@ -15,10 +15,11 @@ use crate::{
     types::UiUpdate,
     ui::run_ui,
 };
+use reth_fork::chainspec::hl::hl_mainnet;
 use dashmap::DashMap;
 use anyhow::Result;
 use futures_util::StreamExt;
-use reth::chainspec::{ChainSpec, MAINNET};
+use reth::chainspec::{ChainSpec,};
 use reth::network::transactions::NetworkTransactionEvent;
 use reth::revm::revm::primitives::alloy_primitives::{B256, B512};
 use reth_discv4::{Discv4ConfigBuilder, NatResolver, NodeRecord};
@@ -67,7 +68,8 @@ async fn main() -> Result<()> {
     let our_peer_id: PeerId = B512::from_slice(&serialized_pk_bytes[1..65]);
     info!("🔑 Our Peer ID: {}", our_peer_id);
 
-    let chain_spec: Arc<ChainSpec> = MAINNET.clone();
+    let hl_chainspec = hl_mainnet();
+    let chain_spec: Arc<ChainSpec> = Arc::new(hl_chainspec);  // hl対応
     info!("⛓️ Using Chain Spec: {}", chain_spec.chain);
 
     let bootnodes: Vec<NodeRecord> = parse_bootnodes(app_config.bootnodes.clone())?;
@@ -203,39 +205,24 @@ async fn main() -> Result<()> {
         while let Some(tx) = db_writer_rx.recv().await {
             let api_tx = ApiTransaction {
                 hash: tx.hash.to_string(),
-                tx_type: tx.tx_type as i16,
-                sender: tx.sender.map(|s| s.to_string()),
-                receiver: tx.receiver.map(|r| r.to_string()),
-                value_wei: tx.value.to_string(),
-                gas_limit: tx.gas_limit as i64,
-                gas_price_or_max_fee_wei: tx.gas_price_or_max_fee.map(|p| p.to_string()),
-                max_priority_fee_wei: tx.max_priority_fee.map(|p| p.to_string()),
-                input_len: tx.input_len as i32,
-                first_seen_at: tx.first_seen_at,
-                is_private: tx.is_private,
+                // tx_type: tx.tx_type as i16,
+                // sender: tx.sender.map(|s| s.to_string()),
+                // receiver: tx.receiver.map(|r| r.to_string()),
+                // value_wei: tx.value.to_string(),
+                // gas_limit: tx.gas_limit as i64,
+                // gas_price_or_max_fee_wei: tx.gas_price_or_max_fee.map(|p| p.to_string()),
+                // max_priority_fee_wei: tx.max_priority_fee.map(|p| p.to_string()),
+                // input_len: tx.input_len as i32,
+                // first_seen_at: tx.first_seen_at,
+                // is_private: tx.is_private,
             };
 
             let query_result = sqlx::query!(
                 r#"
-                INSERT INTO transactions (
-                    hash, tx_type, sender, receiver, value_wei, gas_limit, 
-                    gas_price_or_max_fee_wei, max_priority_fee_wei, input_len, 
-                    first_seen_at, is_private
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                INSERT INTO transactions (hash) VALUES ($1)
                 ON CONFLICT (hash) DO NOTHING
                 "#,
                 api_tx.hash,
-                api_tx.tx_type,
-                api_tx.sender,
-                api_tx.receiver,
-                api_tx.value_wei,
-                api_tx.gas_limit,
-                api_tx.gas_price_or_max_fee_wei,
-                api_tx.max_priority_fee_wei,
-                api_tx.input_len,
-                api_tx.first_seen_at,
-                api_tx.is_private
             )
             .execute(&db_pool_clone)
             .await;
@@ -313,7 +300,7 @@ async fn main() -> Result<()> {
                     info!(target: "crawler::block-processor", "🕵️ Found private transaction: {}", tx.hash());
 
                     let mut analysis_result = analysis::analyze_transaction(&tx);
-                    analysis_result.is_private = true;
+                    // analysis_result.is_private = true;
 
                     if block_db_writer_tx.send(analysis_result).is_err() {
                         error!(target: "crawler::block-processor", "Failed to send private tx to DB writer.");

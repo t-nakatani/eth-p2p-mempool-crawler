@@ -134,13 +134,13 @@ pub async fn run_ui(mut ui_rx: UnboundedReceiver<UiUpdate>) -> Result<()> {
                     debug!(target: "crawler::ui::receiver", "UI Received NewTx: {}", analysis_result.hash);
 
                     app_state.total_txs_seen += 1;
-                    match analysis_result.tx_type {
-                        TxType::Legacy => app_state.legacy_tx_count += 1,
-                        TxType::Eip1559 => app_state.eip1559_tx_count += 1,
-                        TxType::Eip2930 => app_state.eip2930_tx_count += 1,
-                        TxType::Eip4844 => app_state.eip4844_tx_count += 1,
-                        TxType::Eip7702 => app_state.eip_7702_tx_count += 1,
-                    }
+                    // match analysis_result.tx_type {
+                    //     TxType::Legacy => app_state.legacy_tx_count += 1,
+                    //     TxType::Eip1559 => app_state.eip1559_tx_count += 1,
+                    //     TxType::Eip2930 => app_state.eip2930_tx_count += 1,
+                    //     TxType::Eip4844 => app_state.eip4844_tx_count += 1,
+                    //     TxType::Eip7702 => app_state.eip_7702_tx_count += 1,
+                    // }
 
                     app_state.recent_txs.push_front(analysis_result);
                     if app_state.recent_txs.len() > MAX_RECENT_TXS {
@@ -269,37 +269,37 @@ fn draw_frame(f: &mut Frame, app_state: &mut AppState) {
             .take(10)
             .collect::<String>()
             + "...";
-        let sender = tx.sender.map_or_else(
-            || "N/A".to_string(),
-            |a| format!("{:#x}", a).chars().take(10).collect::<String>() + "...",
-        );
-        let receiver = tx.receiver.map_or_else(
-            || "Create".to_string(),
-            |a| format!("{:#x}", a).chars().take(10).collect::<String>() + "...",
-        );
+        // let sender = tx.sender.map_or_else(
+        //     || "N/A".to_string(),
+        //     |a| format!("{:#x}", a).chars().take(10).collect::<String>() + "...",
+        // );
+        // let receiver = tx.receiver.map_or_else(
+        //     || "Create".to_string(),
+        //     |a| format!("{:#x}", a).chars().take(10).collect::<String>() + "...",
+        // );
 
-        let gwei_divisor_u256 = U256::from(1_000_000_000);
-        let value_gwei = tx.value / gwei_divisor_u256;
-        let value_gwei_str = value_gwei.to_string();
+        // let gwei_divisor_u256 = U256::from(1_000_000_000);
+        // let value_gwei = tx.value / gwei_divisor_u256;
+        // let value_gwei_str = value_gwei.to_string();
 
-        let gwei_divisor_u128 = 1_000_000_000u128;
-        let gas_price_gwei_str = tx
-            .gas_price_or_max_fee
-            .map(|p_wei| (p_wei / gwei_divisor_u128).to_formatted_string(&Locale::en))
-            .unwrap_or_else(|| "N/A".to_string());
-        let gas_prio_gwei_str = tx
-            .max_priority_fee
-            .map(|p_wei| (p_wei / gwei_divisor_u128).to_formatted_string(&Locale::en))
-            .unwrap_or_else(|| "-".to_string());
+        // let gwei_divisor_u128 = 1_000_000_000u128;
+        // let gas_price_gwei_str = tx
+        //     .gas_price_or_max_fee
+        //     .map(|p_wei| (p_wei / gwei_divisor_u128).to_formatted_string(&Locale::en))
+        //     .unwrap_or_else(|| "N/A".to_string());
+        // let gas_prio_gwei_str = tx
+        //     .max_priority_fee
+        //     .map(|p_wei| (p_wei / gwei_divisor_u128).to_formatted_string(&Locale::en))
+        //     .unwrap_or_else(|| "-".to_string());
 
         Row::new(vec![
             Cell::from(hash_short),
-            Cell::from(format!("{:?}", tx.tx_type)),
-            Cell::from(sender),
-            Cell::from(receiver),
-            Cell::from(value_gwei_str),
-            Cell::from(gas_prio_gwei_str),
-            Cell::from(gas_price_gwei_str),
+            // Cell::from(format!("{:?}", tx.tx_type)),
+            // Cell::from(sender),
+            // Cell::from(receiver),
+            // Cell::from(value_gwei_str),
+            // Cell::from(gas_prio_gwei_str),
+            // Cell::from(gas_price_gwei_str),
         ])
     });
 

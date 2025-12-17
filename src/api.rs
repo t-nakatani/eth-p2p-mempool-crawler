@@ -26,16 +26,16 @@ pub struct AppState {
 #[derive(Deserialize, Serialize, sqlx::FromRow)]
 pub struct ApiTransaction {
     pub hash: String,
-    pub tx_type: i16,
-    pub sender: Option<String>,
-    pub receiver: Option<String>,
-    pub value_wei: String,
-    pub gas_limit: i64,
-    pub gas_price_or_max_fee_wei: Option<String>,
-    pub max_priority_fee_wei: Option<String>,
-    pub input_len: i32,
-    pub first_seen_at: DateTime<Utc>,
-    pub is_private: bool,
+    // pub tx_type: i16,
+    // pub sender: Option<String>,
+    // pub receiver: Option<String>,
+    // pub value_wei: String,
+    // pub gas_limit: i64,
+    // pub gas_price_or_max_fee_wei: Option<String>,
+    // pub max_priority_fee_wei: Option<String>,
+    // pub input_len: i32,
+    // pub first_seen_at: DateTime<Utc>,
+    // pub is_private: bool,
 }
 
 async fn websocket_handler(

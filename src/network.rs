@@ -27,8 +27,8 @@ use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct PeerSessionInfo {
-    #[allow(dead_code)]
-    status: Arc<Status>,
+    // #[allow(dead_code)]
+    // status: Arc<Status>,
     session_info: Arc<SessionInfo>,
 }
 
@@ -67,7 +67,7 @@ impl EthP2PHandler {
         info!(target: "crawler::network", %peer_id, client=%session_info.client_version, "Session established...");
 
         let peer_info_struct = PeerSessionInfo {
-            status: session_info.status.clone(),
+            // status: session_info.status.clone(),
             session_info: Arc::clone(&session_info),
         };
         self.peers.insert(peer_id, peer_info_struct);
@@ -147,7 +147,8 @@ impl EthP2PHandler {
                 if !hashes.is_empty() {
                     let request_payload = GetPooledTransactions(hashes.clone());
                     let (response_tx, response_rx) =
-                        oneshot::channel::<Result<PooledTransactions, RequestError>>();
+                        oneshot::channel();
+                        // oneshot::channel::<Result<PooledTransactions, RequestError>>();
                     let peer_request = PeerRequest::GetPooledTransactions {
                         request: request_payload,
                         response: response_tx,
@@ -161,9 +162,10 @@ impl EthP2PHandler {
                                 info!(target: "crawler::mempool", %peer_id, count = received_pooled_txs.len(), "Received PooledTransactions RESPONSE");
                                 for pooled_tx_arc in received_pooled_txs.into_iter() {
                                     let received_hash = pooled_tx_arc.hash();
-                                    let pooled_tx_ref: &PooledTransaction = &pooled_tx_arc;
-                                    let pooled_tx: PooledTransaction = pooled_tx_ref.clone();
-                                    let tx_signed: TransactionSigned = pooled_tx.into();
+                                    // let pooled_tx_ref: &PooledTransaction = &pooled_tx_arc;
+                                    // let pooled_tx: PooledTransaction = pooled_tx_ref.clone();
+                                    // let tx_signed: TransactionSigned = pooled_tx.into();
+                                    let tx_signed: TransactionSigned = pooled_tx_arc.clone().into();
                                     if tx_signed.hash() != received_hash {
                                         warn!(target: "crawler::tx", received_hash=%received_hash, computed_hash=%tx_signed.hash(), "Hash mismatch on requested tx!");
                                     }

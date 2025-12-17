@@ -32,17 +32,17 @@ impl GasOracle {
         loop {
             if let Ok(tx_json) = rx.recv().await {
                 if let Ok(tx) = serde_json::from_str::<ApiTransaction>(&tx_json) {
-                    if let Some(prio_fee_str) = tx.max_priority_fee_wei {
-                        if let Ok(prio_fee) = prio_fee_str.parse::<u128>() {
-                            if prio_fee > 0 {
-                                let mut fees = self.recent_priority_fees.write().await;
-                                if fees.len() == MAX_SAMPLES {
-                                    fees.pop_front();
-                                }
-                                fees.push_back(prio_fee);
-                            }
-                        }
-                    }
+                    // if let Some(prio_fee_str) = tx.max_priority_fee_wei {
+                    //     if let Ok(prio_fee) = prio_fee_str.parse::<u128>() {
+                    //         if prio_fee > 0 {
+                    //             let mut fees = self.recent_priority_fees.write().await;
+                    //             if fees.len() == MAX_SAMPLES {
+                    //                 fees.pop_front();
+                    //             }
+                    //             fees.push_back(prio_fee);
+                    //         }
+                    //     }
+                    // }
                 }
             }
         }
