@@ -10,16 +10,22 @@ license = "MIT OR Apache-2.0"
 keywords = ["ethereum", "p2p", "blockchain", "mempool", "crawler"]
 categories = ["cryptocurrency", "network-programming"]
 
+[lib]
+name = "reth_fork"
+path = "src/lib.rs"
+
 [dependencies]
-reth = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-network = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-network-api = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-discv4 = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-eth-wire = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-primitives = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-tasks = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-provider = { git = "https://github.com/paradigmxyz/reth", default-features = false }
-reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", default-features = false }
+reth = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-network = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-network-api = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-discv4 = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-eth-wire = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-primitives = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-tasks = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-provider = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-primitives-traits = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-chainspec = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
+reth-ethereum-forks = { git = "https://github.com/hl-archive-node/reth", rev = "416c2e26756f1c8ee86e6b8e4081f434952b3a1a" }
 
 secp256k1 = { version = "0.30.0", features = [ "global-context", "recovery" ] }
 
@@ -43,6 +49,8 @@ futures-util = "0.3.31"
 enr = "0.13.0"
 dashmap = "6.1.0"
 alloy-consensus = "0.14.0"
+alloy-chains = { version = "0.2.5", default-features = false }
+alloy-primitives = "1.5"
 config = "0.15.11"
 serde = { version = "1.0.219", features = ["derive"] }
 ratatui = "0.29.0"
