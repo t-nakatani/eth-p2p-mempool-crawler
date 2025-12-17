@@ -2,6 +2,7 @@ mod analysis;
 mod api;
 mod config;
 mod db;
+mod discovery_dialer;
 mod network;
 mod oracle;
 mod types;
@@ -14,6 +15,7 @@ use crate::{
     oracle::GasOracle,
     types::UiUpdate,
     ui::run_ui,
+    discovery_dialer::{spawn_discovery_dialer, DialPolicy},
 };
 use reth_fork::chainspec::hl::hl_mainnet;
 use dashmap::DashMap;
@@ -42,7 +44,7 @@ use tokio::{
         mpsc::{self},
     },
 };
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -51,15 +53,15 @@ async fn main() -> Result<()> {
     info!("🚀 Starting Ethereum P2P Crawler...");
     println!("Loaded configuration: {:?}", app_config);
 
-    let db_pool = db::create_pool(&app_config.database_url).await?;
-    let (tx_broadcaster, _) = broadcast::channel::<String>(100);
-    let gas_oracle = Arc::new(GasOracle::new());
+    // let db_pool = db::create_pool(&app_config.database_url).await?;
+    // let (tx_broadcaster, _) = broadcast::channel::<String>(100);
+    // let gas_oracle = Arc::new(GasOracle::new());
 
-    let app_state = Arc::new(AppState {
-        tx_broadcaster: tx_broadcaster.clone(),
-        db_pool: db_pool.clone(),
-        gas_oracle: gas_oracle.clone(),
-    });
+    // let app_state = Arc::new(AppState {
+    //     tx_broadcaster: tx_broadcaster.clone(),
+    //     db_pool: db_pool.clone(),
+    //     gas_oracle: gas_oracle.clone(),
+    // });
 
     let secret_key: RethSecretKey = load_or_generate_key(app_config.node_key_file.clone())?;
     let secp = Secp256k1::new();
@@ -68,8 +70,7 @@ async fn main() -> Result<()> {
     let our_peer_id: PeerId = B512::from_slice(&serialized_pk_bytes[1..65]);
     info!("🔑 Our Peer ID: {}", our_peer_id);
 
-    let hl_chainspec = hl_mainnet();
-    let chain_spec: Arc<ChainSpec> = Arc::new(hl_chainspec);  // hl対応
+    let chain_spec: Arc<ChainSpec> = Arc::new(hl_mainnet());  // hl対応
     info!("⛓️ Using Chain Spec: {}", chain_spec.chain);
 
     let bootnodes: Vec<NodeRecord> = parse_bootnodes(app_config.bootnodes.clone())?;
@@ -84,16 +85,18 @@ async fn main() -> Result<()> {
     let executor = task_manager.executor();
     info!("Task executor created.");
 
-    let (tx_event_sender, mut tx_event_receiver) =
-        mpsc::unbounded_channel::<NetworkTransactionEvent>();
-    let (decoded_tx_sender, mut decoded_tx_receiver) =
-        mpsc::unbounded_channel::<Arc<TransactionSigned>>();
-    let (db_writer_tx, mut db_writer_rx) = mpsc::unbounded_channel::<analysis::TxAnalysisResult>();
-    let (ui_tx, ui_rx) = mpsc::unbounded_channel::<UiUpdate>();
-    let (block_sender, mut block_receiver) = mpsc::unbounded_channel::<Block>();
-    let public_tx_cache = Arc::new(RwLock::new(HashSet::<(B256, Instant)>::new()));
-    let block_db_writer_tx = db_writer_tx.clone();
-    let peers = Arc::new(DashMap::new());
+
+
+    // let (tx_event_sender, mut tx_event_receiver) =
+    //     mpsc::unbounded_channel::<NetworkTransactionEvent>();
+    // let (decoded_tx_sender, mut decoded_tx_receiver) =
+    //     mpsc::unbounded_channel::<Arc<TransactionSigned>>();
+    // let (db_writer_tx, mut db_writer_rx) = mpsc::unbounded_channel::<analysis::TxAnalysisResult>();
+    // let (ui_tx, ui_rx) = mpsc::unbounded_channel::<UiUpdate>();
+    // let (block_sender, mut block_receiver) = mpsc::unbounded_channel::<Block>();
+    // let public_tx_cache = Arc::new(RwLock::new(HashSet::<(B256, Instant)>::new()));
+    // let block_db_writer_tx = db_writer_tx.clone();
+    // let peers = Arc::new(DashMap::new());
 
     let mut discv4_builder = Discv4ConfigBuilder::default();
     discv4_builder.add_boot_nodes(bootnodes.clone());
@@ -115,225 +118,236 @@ async fn main() -> Result<()> {
     let client = NoopProvider::<ChainSpec>::new(chain_spec.clone());
     let network_config = config_builder.build(client);
 
-    info!(
-        "🔧 Network configured. RLPx TCP listening on {}. Discovery UDP listening on {}. Attempting UPnP NAT.",
-        app_config.p2p_listen_addr, app_config.discv4_listen_addr
-    );
+    // debug!("chain_id: {}, ", network_config.chain_id);
+    // debug!("client_version: {:?}, protocols: {:?}", network_config.hello_message.client_version, network_config.hello_message.protocols);
+    // // debug!("extra_protocols: {:?}", network_config.extra_protocols);
+    // // debug!("peers_config: {:?}", network_config.peers_config);
+    // // debug!("sessions_config: {:?}", network_config.sessions_config);
+    // // debug!("transactions_manager_config: {:?}", network_config.transactions_manager_config);
+    // // debug!("nat: {:?}", network_config.nat);
+
+    // info!(
+    //     "🔧 Network configured. RLPx TCP listening on {}. Discovery UDP listening on {}. Attempting UPnP NAT.",
+    //     app_config.p2p_listen_addr, app_config.discv4_listen_addr
+    // );
 
     let mut network_manager = NetworkManager::new(network_config).await?;
-    network_manager.set_transactions(tx_event_sender);
+    // network_manager.set_transactions(tx_event_sender);
     let network_handle = network_manager.handle().clone();
     info!(
         "🌐 Network Manager created. Initial peer count: {}",
         network_handle.num_connected_peers()
     );
 
-    let mut events = network_handle.event_listener();
+    let dial_policy = DialPolicy::default();
+    spawn_discovery_dialer(&executor, network_handle.clone(), dial_policy);
 
-    let initial_head = Head::default();
-    let event_handler = EthP2PHandler::new(
-        chain_spec.clone(),
-        network_handle.clone(),
-        peers.clone(),
-        initial_head,
-        decoded_tx_sender.clone(),
-        ui_tx.clone(),
-    );
-    let handler_arc = Arc::new(event_handler);
+    // let mut events = network_handle.event_listener();
 
-    let task_executor = &executor;
+    // let initial_head = Head::default();
+    // let event_handler = EthP2PHandler::new(
+    //     chain_spec.clone(),
+    //     network_handle.clone(),
+    //     peers.clone(),
+    //     initial_head,
+    //     decoded_tx_sender.clone(),
+    //     ui_tx.clone(),
+    // );
+    // let handler_arc = Arc::new(event_handler);
 
-    let handler_clone_for_events = Arc::clone(&handler_arc);
-    task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::events", "EVENT HANDLER TASK STARTED");
-        loop {
-            if let Some(event) = events.next().await {
-                trace!(target: "crawler::events", ?event, "Received network event object.");
-                if let Err(e) = handler_clone_for_events
-                    .handle_network_event_wrapper(event)
-                    .await
-                {
-                    error!(target: "crawler::events", "Error handling network event: {}", e);
-                }
-            } else {
-                warn!(target: "crawler::events", "Network event stream finished unexpectedly!");
-                break;
-            }
-        }
-    }));
-    info!("Spawned Peer Event Handler task.");
+    // let task_executor = &executor;
 
-    let handler_clone_for_tx = Arc::clone(&handler_arc);
-    task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::tx", "TX HANDLER TASK STARTED");
-        loop {
-            if let Some(event) = tx_event_receiver.recv().await {
-                if let Err(e) = handler_clone_for_tx.handle_transaction_event(event).await {
-                    error!(target: "crawler::tx", "Error handling transaction event: {}", e);
-                }
-            } else {
-                warn!(target: "crawler::tx", "Transaction event stream finished unexpectedly!");
-                break;
-            }
-        }
-    }));
-    info!("Spawned Transaction Event Handler task.");
+    // let handler_clone_for_events = Arc::clone(&handler_arc);
+    // task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::events", "EVENT HANDLER TASK STARTED");
+    //     loop {
+    //         if let Some(event) = events.next().await {
+    //             trace!(target: "crawler::events", ?event, "Received network event object.");
+    //             if let Err(e) = handler_clone_for_events
+    //                 .handle_network_event_wrapper(event)
+    //                 .await
+    //             {
+    //                 error!(target: "crawler::events", "Error handling network event: {}", e);
+    //             }
+    //         } else {
+    //             warn!(target: "crawler::events", "Network event stream finished unexpectedly!");
+    //             break;
+    //         }
+    //     }
+    // }));
+    // info!("Spawned Peer Event Handler task.");
 
-    let cache_clone = public_tx_cache.clone();
-    task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::processor", "Starting decoded transaction processor task...");
-        while let Some(tx_signed_arc) = decoded_tx_receiver.recv().await {
-            cache_clone
-                .write()
-                .await
-                .insert((*tx_signed_arc.hash(), Instant::now()));
+    // let handler_clone_for_tx = Arc::clone(&handler_arc);
+    // task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::tx", "TX HANDLER TASK STARTED");
+    //     loop {
+    //         if let Some(event) = tx_event_receiver.recv().await {
+    //             if let Err(e) = handler_clone_for_tx.handle_transaction_event(event).await {
+    //                 error!(target: "crawler::tx", "Error handling transaction event: {}", e);
+    //             }
+    //         } else {
+    //             warn!(target: "crawler::tx", "Transaction event stream finished unexpectedly!");
+    //             break;
+    //         }
+    //     }
+    // }));
+    // info!("Spawned Transaction Event Handler task.");
 
-            let analysis_result = analysis::analyze_transaction(&tx_signed_arc);
-            if db_writer_tx.send(analysis_result).is_err() {
-                error!(target: "crawler::processor", "Failed to send tx to DB writer.");
-                break;
-            }
-        }
-    }));
-    info!("Spawned Decoded Transaction Processor task.");
+    // let cache_clone = public_tx_cache.clone();
+    // task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::processor", "Starting decoded transaction processor task...");
+    //     while let Some(tx_signed_arc) = decoded_tx_receiver.recv().await {
+    //         cache_clone
+    //             .write()
+    //             .await
+    //             .insert((*tx_signed_arc.hash(), Instant::now()));
 
-    let writer_ui_tx = ui_tx.clone();
-    let db_pool_clone = db_pool.clone();
-    let broadcaster = tx_broadcaster.clone();
-    task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::db-writer", "Starting database writer task...");
-        while let Some(tx) = db_writer_rx.recv().await {
-            let api_tx = ApiTransaction {
-                hash: tx.hash.to_string(),
-                // tx_type: tx.tx_type as i16,
-                // sender: tx.sender.map(|s| s.to_string()),
-                // receiver: tx.receiver.map(|r| r.to_string()),
-                // value_wei: tx.value.to_string(),
-                // gas_limit: tx.gas_limit as i64,
-                // gas_price_or_max_fee_wei: tx.gas_price_or_max_fee.map(|p| p.to_string()),
-                // max_priority_fee_wei: tx.max_priority_fee.map(|p| p.to_string()),
-                // input_len: tx.input_len as i32,
-                // first_seen_at: tx.first_seen_at,
-                // is_private: tx.is_private,
-            };
+    //         let analysis_result = analysis::analyze_transaction(&tx_signed_arc);
+    //         if db_writer_tx.send(analysis_result).is_err() {
+    //             error!(target: "crawler::processor", "Failed to send tx to DB writer.");
+    //             break;
+    //         }
+    //     }
+    // }));
+    // info!("Spawned Decoded Transaction Processor task.");
 
-            let query_result = sqlx::query!(
-                r#"
-                INSERT INTO transactions (hash) VALUES ($1)
-                ON CONFLICT (hash) DO NOTHING
-                "#,
-                api_tx.hash,
-            )
-            .execute(&db_pool_clone)
-            .await;
+    // let writer_ui_tx = ui_tx.clone();
+    // let db_pool_clone = db_pool.clone();
+    // let broadcaster = tx_broadcaster.clone();
+    // task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::db-writer", "Starting database writer task...");
+    //     while let Some(tx) = db_writer_rx.recv().await {
+    //         let api_tx = ApiTransaction {
+    //             hash: tx.hash.to_string(),
+    //             // tx_type: tx.tx_type as i16,
+    //             // sender: tx.sender.map(|s| s.to_string()),
+    //             // receiver: tx.receiver.map(|r| r.to_string()),
+    //             // value_wei: tx.value.to_string(),
+    //             // gas_limit: tx.gas_limit as i64,
+    //             // gas_price_or_max_fee_wei: tx.gas_price_or_max_fee.map(|p| p.to_string()),
+    //             // max_priority_fee_wei: tx.max_priority_fee.map(|p| p.to_string()),
+    //             // input_len: tx.input_len as i32,
+    //             // first_seen_at: tx.first_seen_at,
+    //             // is_private: tx.is_private,
+    //         };
 
-            if let Err(e) = query_result {
-                warn!(target: "crawler::db-writer", "Failed to write tx {} to DB: {}", api_tx.hash, e);
-            }
+    //         let query_result = sqlx::query!(
+    //             r#"
+    //             INSERT INTO transactions (hash) VALUES ($1)
+    //             ON CONFLICT (hash) DO NOTHING
+    //             "#,
+    //             api_tx.hash,
+    //         )
+    //         .execute(&db_pool_clone)
+    //         .await;
 
-            if let Ok(tx_json) = serde_json::to_string(&api_tx) {
-                if broadcaster.send(tx_json).is_err() {
-                    trace!(target: "crawler::broadcaster", "No active WebSocket clients to broadcast to");
-                }
-            }
+    //         if let Err(e) = query_result {
+    //             warn!(target: "crawler::db-writer", "Failed to write tx {} to DB: {}", api_tx.hash, e);
+    //         }
 
-            if writer_ui_tx.send(UiUpdate::NewTx(Box::new(tx))).is_err() {
-                error!(target: "crawler::db-writer", "Failed to send tx update to UI: receiver dropped.");
-            }
-        }
-    }));
-    info!("Spawned Database Writer task.");
+    //         if let Ok(tx_json) = serde_json::to_string(&api_tx) {
+    //             if broadcaster.send(tx_json).is_err() {
+    //                 trace!(target: "crawler::broadcaster", "No active WebSocket clients to broadcast to");
+    //             }
+    //         }
 
-    let network_manager_handle = task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::netmgr", "Starting core network task...");
-        network_manager.await;
-        error!(target: "crawler::netmgr", "Core network task finished unexpectedly!");
-    }));
-    info!("Spawned Core Network task.");
+    //         if writer_ui_tx.send(UiUpdate::NewTx(Box::new(tx))).is_err() {
+    //             error!(target: "crawler::db-writer", "Failed to send tx update to UI: receiver dropped.");
+    //         }
+    //     }
+    // }));
+    // info!("Spawned Database Writer task.");
 
-    let ui_task_handle = task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::ui", "UI TASK STARTED");
-        if let Err(e) = run_ui(ui_rx).await {
-            error!(target: "crawler::ui", "UI task error: {}", e);
-        }
-        info!(target: "crawler::ui", "UI task finished.");
-    }));
-    info!("Spawned UI task.");
+    // let network_manager_handle = task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::netmgr", "Starting core network task...");
+    //     network_manager.await;
+    //     error!(target: "crawler::netmgr", "Core network task finished unexpectedly!");
+    // }));
+    // info!("Spawned Core Network task.");
 
-    let oracle_collector_rx = tx_broadcaster.subscribe();
-    let collector_oracle_instance = gas_oracle.clone();
-    task_executor.spawn(Box::pin(async move {
-        collector_oracle_instance
-            .run_collector(oracle_collector_rx)
-            .await;
-    }));
+    // let ui_task_handle = task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::ui", "UI TASK STARTED");
+    //     if let Err(e) = run_ui(ui_rx).await {
+    //         error!(target: "crawler::ui", "UI task error: {}", e);
+    //     }
+    //     info!(target: "crawler::ui", "UI task finished.");
+    // }));
+    // info!("Spawned UI task.");
 
-    let calculator_oracle_instance = gas_oracle.clone();
-    task_executor.spawn(Box::pin(async move {
-        calculator_oracle_instance.run_calculator().await;
-    }));
-    info!("Spawned Gas Oracle tasks.");
+    // let oracle_collector_rx = tx_broadcaster.subscribe();
+    // let collector_oracle_instance = gas_oracle.clone();
+    // task_executor.spawn(Box::pin(async move {
+    //     collector_oracle_instance
+    //         .run_collector(oracle_collector_rx)
+    //         .await;
+    // }));
 
-    spawn_block_poller(
-        &executor,
-        network_handle.clone(),
-        peers.clone(),
-        block_sender.clone(),
-    );
-    info!("Block poller spawned!");
+    // let calculator_oracle_instance = gas_oracle.clone();
+    // task_executor.spawn(Box::pin(async move {
+    //     calculator_oracle_instance.run_calculator().await;
+    // }));
+    // info!("Spawned Gas Oracle tasks.");
 
-    let block_processor_cache = public_tx_cache.clone();
+    // spawn_block_poller(
+    //     &executor,
+    //     network_handle.clone(),
+    //     peers.clone(),
+    //     block_sender.clone(),
+    // );
+    // info!("Block poller spawned!");
 
-    task_executor.spawn(Box::pin(async move {
-        info!(target: "crawler::block-processor", "Starting block processor task...");
+    // let block_processor_cache = public_tx_cache.clone();
 
-        while let Some(block) = block_receiver.recv().await {
-            info!(target: "crawler::block-processor", "⚙️ Processing new block #{}", block.header.number);
-            let mut cache = block_processor_cache.write().await;
-            let now = Instant::now();
+    // task_executor.spawn(Box::pin(async move {
+    //     info!(target: "crawler::block-processor", "Starting block processor task...");
 
-            let stale_threshold = Duration::from_secs(60);
-            cache.retain(|(_hash, seen_at)| now.duration_since(*seen_at) < stale_threshold);
+    //     while let Some(block) = block_receiver.recv().await {
+    //         info!(target: "crawler::block-processor", "⚙️ Processing new block #{}", block.header.number);
+    //         let mut cache = block_processor_cache.write().await;
+    //         let now = Instant::now();
 
-            for tx in block.body.transactions {
-                if !cache.iter().any(|(h, _)| h == tx.hash()) {
-                    info!(target: "crawler::block-processor", "🕵️ Found private transaction: {}", tx.hash());
+    //         let stale_threshold = Duration::from_secs(60);
+    //         cache.retain(|(_hash, seen_at)| now.duration_since(*seen_at) < stale_threshold);
 
-                    let mut analysis_result = analysis::analyze_transaction(&tx);
-                    // analysis_result.is_private = true;
+    //         for tx in block.body.transactions {
+    //             if !cache.iter().any(|(h, _)| h == tx.hash()) {
+    //                 info!(target: "crawler::block-processor", "🕵️ Found private transaction: {}", tx.hash());
 
-                    if block_db_writer_tx.send(analysis_result).is_err() {
-                        error!(target: "crawler::block-processor", "Failed to send private tx to DB writer.");
-                    }
-                }
-            }
-        }
-    }));
-    info!("Spawned Block Processor task.");
+    //                 let mut analysis_result = analysis::analyze_transaction(&tx);
+    //                 // analysis_result.is_private = true;
 
-    task_executor.spawn(Box::pin(async move {
-        let app_router = create_router(app_state);
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
-        info!(target: "crawler::api", "✅ API server listening on http://0.0.0.0:8000");
-        axum::serve(listener, app_router).await.unwrap();
-    }));
-    info!("Spawned API Server task.");
+    //                 if block_db_writer_tx.send(analysis_result).is_err() {
+    //                     error!(target: "crawler::block-processor", "Failed to send private tx to DB writer.");
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }));
+    // info!("Spawned Block Processor task.");
 
-    info!("✅ Crawler is running! Press Ctrl+C to shut down.");
-    signal::ctrl_c().await?;
-    info!("🛑 Ctrl+C received, initiating shutdown...");
+    // task_executor.spawn(Box::pin(async move {
+    //     let app_router = create_router(app_state);
+    //     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    //     info!(target: "crawler::api", "✅ API server listening on http://0.0.0.0:8000");
+    //     axum::serve(listener, app_router).await.unwrap();
+    // }));
+    // info!("Spawned API Server task.");
 
-    if let Err(e) = ui_tx.send(UiUpdate::Shutdown) {
-        error!(target: "crawler::main", "Failed to send shutdown signal to UI task: {}", e);
-    }
+    // info!("✅ Crawler is running! Press Ctrl+C to shut down.");
+    // signal::ctrl_c().await?;
+    // info!("🛑 Ctrl+C received, initiating shutdown...");
 
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // if let Err(e) = ui_tx.send(UiUpdate::Shutdown) {
+    //     error!(target: "crawler::main", "Failed to send shutdown signal to UI task: {}", e);
+    // }
 
-    drop(db_pool);
-    drop(task_manager);
+    // tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
-    let _ = tokio::join!(ui_task_handle, network_manager_handle);
+    // drop(db_pool);
+    // drop(task_manager);
 
-    info!("Shutdown complete.");
+    // let _ = tokio::join!(ui_task_handle, network_manager_handle);
+
+    // info!("Shutdown complete.");
     Ok(())
 }
